@@ -123,4 +123,22 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Improve mobile touch targets */
+  @media (max-width: 640px) {
+    button {
+      @apply min-h-[44px];
+    }
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better text rendering */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }
