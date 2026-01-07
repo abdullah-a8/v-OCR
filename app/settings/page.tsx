@@ -80,7 +80,7 @@ export default function SettingsPage() {
     }
 
     if (!validateApiKeyFormat(keyToSave)) {
-      toast.error("Invalid API key format. Key should start with 'sk-' or 'di-'");
+      toast.error("Invalid API key format. Key must be at least 20 characters and contain only alphanumeric characters, underscores, or hyphens");
       return;
     }
 
@@ -232,13 +232,13 @@ export default function SettingsPage() {
             <Input
               id="newApiKey"
               type="text"
-              placeholder="sk-... or di-..."
+              placeholder="Enter your DeepInfra API key"
               value={newApiKey}
               onChange={(e) => setNewApiKey(e.target.value)}
               className="font-mono"
             />
             <p className="text-sm text-muted-foreground">
-              Your key should start with &quot;sk-&quot; or &quot;di-&quot;
+              Get your API key from the DeepInfra dashboard
             </p>
           </div>
         </CardContent>

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
 import { getApiKey } from "@/lib/api-key-service";
 import { extractText, fileToBase64 } from "@/lib/deepseek-client";
+import { pdfToImages, isPDF } from "@/lib/pdf-utils";
 import { OCRUploader } from "@/components/ocr-uploader";
 import { OCRPreview } from "@/components/ocr-preview";
 import { BatchProcessor } from "@/components/batch-processor";
@@ -95,24 +96,70 @@ export default function Page() {
     setIsProcessing(true);
 
     try {
-      // Convert to base64
-      const base64 = await fileToBase64(file);
-      const filePreview = file.type.startsWith("image/")
-        ? `data:${file.type};base64,${base64}`
-        : undefined;
+      let allText = "";
+      let totalTokens = 0;
+      let filePreview: string | undefined;
 
-      // Extract text
-      const { data, error } = await extractText(base64, apiKey, file.type);
+      if (isPDF(file)) {
+        // Convert PDF to images and process each page
+        toast.info("Converting PDF to images...");
+        const pages = await pdfToImages(file);
 
-      if (error) {
-        toast.error(`Error: ${error.message}`);
-        if (error.type === "invalid_key") {
-          setShowNoKeyDialog(true);
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          toast.info(`Processing page ${i + 1} of ${pages.length}...`);
+
+          const { data, error } = await extractText(
+            page.imageBase64,
+            apiKey,
+            "image/png"
+          );
+
+          if (error) {
+            toast.error(`Error on page ${i + 1}: ${error.message}`);
+            if (error.type === "invalid_key") {
+              setShowNoKeyDialog(true);
+              return;
+            }
+          } else if (data) {
+            // Add page separator for multi-page PDFs
+            if (pages.length > 1 && i > 0) {
+              allText += `\n\n---\n\n## Page ${i + 1}\n\n`;
+            } else if (pages.length > 1) {
+              allText += `## Page 1\n\n`;
+            }
+            allText += data.text;
+            totalTokens += data.tokensUsed;
+          }
         }
-      } else if (data) {
+
+        // Use first page as preview
+        if (pages.length > 0) {
+          filePreview = `data:image/png;base64,${pages[0].imageBase64}`;
+        }
+      } else {
+        // Regular image processing
+        const base64 = await fileToBase64(file);
+        filePreview = `data:${file.type};base64,${base64}`;
+
+        const { data, error } = await extractText(base64, apiKey, file.type);
+
+        if (error) {
+          toast.error(`Error: ${error.message}`);
+          if (error.type === "invalid_key") {
+            setShowNoKeyDialog(true);
+          }
+          return;
+        } else if (data) {
+          allText = data.text;
+          totalTokens = data.tokensUsed;
+        }
+      }
+
+      if (allText) {
         setSingleResult({
-          text: data.text,
-          tokens: data.tokensUsed,
+          text: allText,
+          tokens: totalTokens,
           fileName: file.name,
           filePreview,
         });
@@ -234,45 +281,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* Empty state */}
-        {viewMode === "upload" && files.length === 0 && (
-          <div className="mx-auto mt-12 max-w-2xl">
-            <Card>
-              <CardHeader>
-                <CardTitle>Welcome to vOCR</CardTitle>
-                <CardDescription>
-                  Here&apos;s what you can do with this tool:
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="flex gap-3">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    1
-                  </div>
-                  <div>
-                    <strong>Upload Documents:</strong> Drag and drop or browse for images (JPG, PNG, WebP) or PDFs
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    2
-                  </div>
-                  <div>
-                    <strong>Extract Text:</strong> Our AI-powered OCR will extract all text while preserving formatting
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    3
-                  </div>
-                  <div>
-                    <strong>Copy or Download:</strong> Single files show a beautiful preview, multiple files can be downloaded as a ZIP
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+
       </main>
 
       {/* No API Key Dialog */}

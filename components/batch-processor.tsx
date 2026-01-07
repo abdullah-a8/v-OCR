@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { extractText, fileToBase64 } from "@/lib/deepseek-client";
+import { pdfToImages, isPDF } from "@/lib/pdf-utils";
 import { Download, Copy, CheckCircle2, XCircle, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import JSZip from "jszip";
@@ -50,28 +51,53 @@ export function BatchProcessor({ files, apiKey, onComplete }: BatchProcessorProp
       setResults([...updatedResults]);
 
       try {
-        // Convert file to base64
-        const base64 = await fileToBase64(file);
+        let allText = "";
+        let totalTokens = 0;
 
-        // Extract text
-        const { data, error } = await extractText(base64, apiKey, file.type);
+        if (isPDF(file)) {
+          // Convert PDF to images and process each page
+          const pages = await pdfToImages(file);
 
-        if (error) {
-          updatedResults[i] = {
-            ...updatedResults[i],
-            status: "error",
-            error: error.message,
-          };
-          toast.error(`${file.name}: ${error.message}`);
-        } else if (data) {
-          updatedResults[i] = {
-            ...updatedResults[i],
-            status: "success",
-            extractedText: data.text,
-            tokensUsed: data.tokensUsed,
-          };
-          toast.success(`${file.name}: Text extracted successfully`);
+          for (let j = 0; j < pages.length; j++) {
+            const page = pages[j];
+            const { data, error } = await extractText(
+              page.imageBase64,
+              apiKey,
+              "image/png"
+            );
+
+            if (error) {
+              throw new Error(`Page ${j + 1}: ${error.message}`);
+            } else if (data) {
+              if (pages.length > 1 && j > 0) {
+                allText += `\n\n---\n\n## Page ${j + 1}\n\n`;
+              } else if (pages.length > 1) {
+                allText += `## Page 1\n\n`;
+              }
+              allText += data.text;
+              totalTokens += data.tokensUsed;
+            }
+          }
+        } else {
+          // Regular image processing
+          const base64 = await fileToBase64(file);
+          const { data, error } = await extractText(base64, apiKey, file.type);
+
+          if (error) {
+            throw new Error(error.message);
+          } else if (data) {
+            allText = data.text;
+            totalTokens = data.tokensUsed;
+          }
         }
+
+        updatedResults[i] = {
+          ...updatedResults[i],
+          status: "success",
+          extractedText: allText,
+          tokensUsed: totalTokens,
+        };
+        toast.success(`${file.name}: Text extracted successfully`);
       } catch (error) {
         updatedResults[i] = {
           ...updatedResults[i],

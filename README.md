@@ -63,7 +63,10 @@ A modern, mobile-first web application for extracting text from images and PDFs 
 4. Run database migrations:
    ```bash
    # Run Better Auth migrations
-   bunx better-auth migrate
+   bun run migrate
+
+   # Or manually with environment variables:
+   # bun --env-file=.env.local x @better-auth/cli migrate --config lib/auth.ts
 
    # Run application migrations
    # Copy SQL from supabase/migrations/001_create_user_api_keys.sql

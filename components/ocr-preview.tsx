@@ -104,12 +104,10 @@ export function OCRPreview({
             <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto rounded-lg border bg-muted/30 p-4">
               <Markdown
                 components={{
-                  code(props) {
-                    const { children, className, node, ...rest } = props;
+                  code({ children, className }) {
                     const match = /language-(\w+)/.exec(className || "");
                     return match ? (
                       <SyntaxHighlighter
-                        {...rest}
                         PreTag="div"
                         language={match[1]}
                         style={oneDark}
@@ -117,10 +115,7 @@ export function OCRPreview({
                         {String(children).replace(/\n$/, "")}
                       </SyntaxHighlighter>
                     ) : (
-                      <code
-                        {...rest}
-                        className="rounded bg-muted px-1 py-0.5 font-mono text-sm"
-                      >
+                      <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm">
                         {children}
                       </code>
                     );

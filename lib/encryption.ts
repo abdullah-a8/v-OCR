@@ -136,10 +136,10 @@ export function maskApiKey(apiKey: string): string {
  * @returns True if the API key format is valid
  */
 export function validateApiKeyFormat(apiKey: string): boolean {
-  // DeepInfra API keys typically start with specific prefixes
-  // and have a minimum length
+  // DeepInfra API keys are alphanumeric tokens with a minimum length
+  // They don't follow a specific prefix pattern
   return (
     apiKey.length >= 20 &&
-    (apiKey.startsWith("sk-") || apiKey.startsWith("di-"))
+    /^[A-Za-z0-9_\-]+$/.test(apiKey)
   );
 }

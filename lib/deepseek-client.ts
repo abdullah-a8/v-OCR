@@ -17,16 +17,31 @@ export interface OCRError {
 }
 
 /**
- * Extract text from an image or PDF using DeepSeek OCR
+ * Prompt types for different OCR tasks
+ * Based on official DeepSeek-OCR documentation
  */
+export type OCRPromptType = "document" | "general" | "free" | "figure";
+
+const OCR_PROMPTS: Record<OCRPromptType, string> = {
+  // For documents - preserves layout, tables, markdown formatting (no grounding coordinates)
+  document: "Convert the document to markdown.",
+  // For general images with text (no grounding coordinates)
+  general: "OCR this image.",
+  // Plain text extraction without layout preservation
+  free: "Free OCR.",
+  // For figures and charts
+  figure: "Parse the figure.",
+};
+
 export async function extractText(
   imageBase64: string,
   apiKey: string,
-  mimeType: string = "image/jpeg"
+  mimeType: string = "image/jpeg",
+  promptType: OCRPromptType = "document" // Rich markdown with tables/headers
 ): Promise<{ data?: OCRResponse; error?: OCRError }> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for larger documents
 
     const response = await fetch(
       "https://api.deepinfra.com/v1/openai/chat/completions",
@@ -42,21 +57,24 @@ export async function extractText(
             {
               role: "user",
               content: [
-                {
-                  type: "text",
-                  text: "Extract all text from this image in markdown format. Preserve formatting, tables, and structure.",
-                },
+                // Image MUST come before text per DeepInfra multimodal docs
                 {
                   type: "image_url",
                   image_url: {
                     url: `data:${mimeType};base64,${imageBase64}`,
                   },
                 },
+                {
+                  type: "text",
+                  text: OCR_PROMPTS[promptType],
+                },
               ],
             },
           ],
           temperature: 0.0,
-          max_tokens: 8192,
+          max_tokens: 4096, // Model context is 8192, leave room for input tokens
+          frequency_penalty: 1.0, // Prevent repetition loops
+          presence_penalty: 0.5,
         }),
         signal: controller.signal,
       }
