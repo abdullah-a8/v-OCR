@@ -10,7 +10,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -25,20 +24,25 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { saveApiKey, getApiKey, deleteApiKey } from "@/lib/api-key-service";
 import { maskApiKey, validateApiKeyFormat } from "@/lib/encryption";
-import { Loader2, Eye, EyeOff, Trash2, Check } from "lucide-react";
+import { Loader2, Eye, EyeOff, Trash2, Pencil, X, ArrowLeft, LogOut } from "lucide-react";
+import { signOut } from "@/lib/auth-client";
+import { UserAvatar } from "@/components/user-avatar";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
   const [apiKey, setApiKey] = useState("");
   const [maskedKey, setMaskedKey] = useState<string | null>(null);
-  const [newApiKey, setNewApiKey] = useState("");
+  const [editValue, setEditValue] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [hasExistingKey, setHasExistingKey] = useState(false);
 
   useEffect(() => {
@@ -56,7 +60,7 @@ export default function SettingsPage() {
   const loadApiKey = async () => {
     if (!session?.user?.id) return;
 
-    setIsLoading(true);
+    setIsPageLoading(true);
     const { apiKey: existingKey, error } = await getApiKey(session.user.id);
 
     if (error) {
@@ -66,13 +70,25 @@ export default function SettingsPage() {
       setMaskedKey(maskApiKey(existingKey));
       setHasExistingKey(true);
     }
-    setIsLoading(false);
+    setIsPageLoading(false);
+  };
+
+  const handleStartEdit = () => {
+    setEditValue(apiKey);
+    setIsEditing(true);
+    setShowApiKey(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditValue("");
+    setIsEditing(false);
+    setShowApiKey(false);
   };
 
   const handleSaveApiKey = async () => {
     if (!session?.user?.id) return;
 
-    const keyToSave = newApiKey || apiKey;
+    const keyToSave = isEditing ? editValue : editValue;
 
     if (!keyToSave.trim()) {
       toast.error("Please enter an API key");
@@ -80,7 +96,7 @@ export default function SettingsPage() {
     }
 
     if (!validateApiKeyFormat(keyToSave)) {
-      toast.error("Invalid API key format. Key must be at least 20 characters and contain only alphanumeric characters, underscores, or hyphens");
+      toast.error("Invalid format. Key must be at least 20 characters.");
       return;
     }
 
@@ -88,11 +104,12 @@ export default function SettingsPage() {
     const { success, error } = await saveApiKey(session.user.id, keyToSave);
 
     if (success) {
-      toast.success("API key saved successfully!");
+      toast.success("API key saved!");
       setApiKey(keyToSave);
       setMaskedKey(maskApiKey(keyToSave));
-      setNewApiKey("");
+      setEditValue("");
       setHasExistingKey(true);
+      setIsEditing(false);
       setShowApiKey(false);
     } else {
       toast.error(error || "Failed to save API key");
@@ -101,21 +118,22 @@ export default function SettingsPage() {
   };
 
   const handleTestApiKey = async () => {
-    if (!apiKey) {
+    const keyToTest = isEditing ? editValue : apiKey;
+
+    if (!keyToTest) {
       toast.error("No API key to test");
       return;
     }
 
     setIsTesting(true);
     try {
-      // Make a simple test request to DeepInfra
       const response = await fetch(
         "https://api.deepinfra.com/v1/openai/chat/completions",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
+            Authorization: `Bearer ${keyToTest}`,
           },
           body: JSON.stringify({
             model: "deepseek-ai/DeepSeek-OCR",
@@ -131,14 +149,14 @@ export default function SettingsPage() {
       );
 
       if (response.ok) {
-        toast.success("API key is valid and working!");
+        toast.success("API key is valid!");
       } else if (response.status === 401) {
         toast.error("API key is invalid or expired");
       } else {
-        toast.error(`API test failed with status: ${response.status}`);
+        toast.error(`Test failed: ${response.status}`);
       }
     } catch (error) {
-      toast.error("Failed to test API key. Check your connection.");
+      toast.error("Connection failed");
       console.error("API test error:", error);
     } finally {
       setIsTesting(false);
@@ -155,15 +173,16 @@ export default function SettingsPage() {
       toast.success("API key deleted");
       setApiKey("");
       setMaskedKey(null);
-      setNewApiKey("");
+      setEditValue("");
       setHasExistingKey(false);
+      setIsEditing(false);
     } else {
       toast.error(error || "Failed to delete API key");
     }
     setIsLoading(false);
   };
 
-  if (isPending || isLoading) {
+  if (isPending || isPageLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -174,130 +193,227 @@ export default function SettingsPage() {
   if (!session) return null;
 
   return (
-    <div className="container mx-auto max-w-2xl p-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground mt-2">
-          Manage your DeepInfra API key for OCR processing
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>DeepInfra API Key</CardTitle>
-          <CardDescription>
-            Your API key is encrypted and stored securely. Get your API key from{" "}
-            <a
-              href="https://deepinfra.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              DeepInfra
-            </a>
-            .
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {hasExistingKey && (
-            <div className="space-y-2">
-              <Label>Current API Key</Label>
-              <div className="flex gap-2">
-                <Input
-                  type={showApiKey ? "text" : "password"}
-                  value={showApiKey ? apiKey : maskedKey || ""}
-                  readOnly
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                >
-                  {showApiKey ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="newApiKey">
-              {hasExistingKey ? "Update API Key" : "Enter API Key"}
-            </Label>
-            <Input
-              id="newApiKey"
-              type="text"
-              placeholder="Enter your DeepInfra API key"
-              value={newApiKey}
-              onChange={(e) => setNewApiKey(e.target.value)}
-              className="font-mono"
-            />
+    <div className="min-h-screen">
+      {/* Header with back button */}
+      <header className="border-b">
+        <div className="container mx-auto flex items-center gap-4 p-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push("/")}
+            className="shrink-0"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-semibold">Settings</h1>
             <p className="text-sm text-muted-foreground">
-              Get your API key from the DeepInfra dashboard
+              Manage your API key
             </p>
           </div>
-        </CardContent>
-        <CardFooter className="flex flex-wrap gap-2">
-          <Button onClick={handleSaveApiKey} disabled={isLoading}>
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Check className="mr-2 h-4 w-4" />
-            )}
-            {hasExistingKey ? "Update Key" : "Save Key"}
-          </Button>
+        </div>
+      </header>
 
-          {hasExistingKey && (
-            <>
+      {/* Main content */}
+      <main className="container mx-auto max-w-lg p-4 py-8 space-y-6">
+        {/* API Key Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">DeepInfra API Key</CardTitle>
+            <CardDescription>
+              Get your API key from{" "}
+              <a
+                href="https://deepinfra.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                DeepInfra
+              </a>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Existing key: View/Edit mode */}
+            {hasExistingKey && !isEditing ? (
+              <div className="space-y-3">
+                <Label>Your API Key</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type={showApiKey ? "text" : "password"}
+                    value={showApiKey ? apiKey : maskedKey || ""}
+                    readOnly
+                    className="font-mono bg-muted"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                  >
+                    {showApiKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleStartEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {/* Test button - full width on mobile */}
+                <Button
+                  variant="outline"
+                  onClick={handleTestApiKey}
+                  disabled={isTesting}
+                  className="w-full"
+                >
+                  {isTesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Test Connection
+                </Button>
+              </div>
+            ) : (
+              /* Edit mode or new key entry */
+              <div className="space-y-3">
+                <Label htmlFor="apiKey">
+                  {hasExistingKey ? "Edit API Key" : "Enter API Key"}
+                </Label>
+                <Input
+                  id="apiKey"
+                  type="text"
+                  placeholder="Enter your DeepInfra API key"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  className="font-mono"
+                  autoFocus
+                />
+
+                {/* Action buttons - stacked on mobile */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+                  <Button
+                    onClick={handleSaveApiKey}
+                    disabled={isLoading || !editValue.trim()}
+                    className="w-full sm:flex-1"
+                  >
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {hasExistingKey ? "Save Changes" : "Save Key"}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={handleTestApiKey}
+                    disabled={isTesting || !editValue.trim()}
+                    className="w-full sm:flex-1"
+                  >
+                    {isTesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Test
+                  </Button>
+
+                  {hasExistingKey && (
+                    <Button
+                      variant="ghost"
+                      onClick={handleCancelEdit}
+                      className="w-full sm:w-auto"
+                    >
+                      <X className="mr-2 h-4 w-4 sm:mr-0" />
+                      <span className="sm:hidden">Cancel</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Danger Zone - Only shown when key exists */}
+        {hasExistingKey && (
+          <Card className="border-destructive/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Permanently delete your API key
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground w-full sm:w-auto"
+                      disabled={isLoading}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Key
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete API Key?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        You won&apos;t be able to process documents until you add a new key.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDeleteApiKey}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Account Section */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Account</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <UserAvatar
+                  name={session.user.name}
+                  email={session.user.email}
+                  image={session.user.image}
+                  size="md"
+                />
+                <div className="min-w-0">
+                  {session.user.name && (
+                    <p className="font-medium truncate">{session.user.name}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground truncate">
+                    {session.user.email}
+                  </p>
+                </div>
+              </div>
               <Button
                 variant="outline"
-                onClick={handleTestApiKey}
-                disabled={isTesting || !apiKey}
+                onClick={async () => {
+                  await signOut();
+                  router.push("/auth/signin");
+                }}
+                className="w-full sm:w-auto"
               >
-                {isTesting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Test API Key
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
               </Button>
-
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={isLoading}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete Key
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete API Key</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete your API key? You won&apos;t be
-                      able to process documents until you add a new key.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDeleteApiKey}>
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </>
-          )}
-        </CardFooter>
-      </Card>
-
-      <div className="mt-4">
-        <Button variant="ghost" onClick={() => router.push("/")}>
-          ← Back to Home
-        </Button>
-      </div>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   );
 }

@@ -9,15 +9,23 @@ import { extractText, fileToBase64 } from "@/lib/deepseek-client";
 import { pdfToImages, isPDF } from "@/lib/pdf-utils";
 import { OCRUploader } from "@/components/ocr-uploader";
 import { OCRPreview } from "@/components/ocr-preview";
+import { ProcessingOverlay } from "@/components/processing-overlay";
 import { BatchProcessor } from "@/components/batch-processor";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Settings, Loader2, Sparkles, LogOut } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { signOut } from "@/lib/auth-client";
 
-type ViewMode = "upload" | "single-preview" | "batch-processing";
+type ViewMode = "upload" | "processing" | "single-preview" | "batch-processing";
+
+interface ProcessingState {
+  fileName: string;
+  filePreview?: string;
+  currentStep: string;
+  currentPage?: number;
+  totalPages?: number;
+}
 
 export default function Page() {
   const router = useRouter();
@@ -26,7 +34,7 @@ export default function Page() {
   const [isLoadingKey, setIsLoadingKey] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("upload");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingState, setProcessingState] = useState<ProcessingState | null>(null);
   const [singleResult, setSingleResult] = useState<{
     text: string;
     tokens: number;
@@ -34,6 +42,7 @@ export default function Page() {
     filePreview?: string;
   } | null>(null);
   const [showNoKeyDialog, setShowNoKeyDialog] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // Redirect to signin if not authenticated
   useEffect(() => {
@@ -81,7 +90,7 @@ export default function Page() {
       return;
     }
 
-    // Single file: show preview
+    // Single file: show processing overlay then preview
     if (files.length === 1) {
       await processSingleFile(files[0]);
     } else {
@@ -93,7 +102,16 @@ export default function Page() {
   const processSingleFile = async (file: File) => {
     if (!apiKey) return;
 
-    setIsProcessing(true);
+    // Create abort controller for cancellation
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    // Set initial processing state
+    setViewMode("processing");
+    setProcessingState({
+      fileName: file.name,
+      currentStep: "Preparing file...",
+    });
 
     try {
       let allText = "";
@@ -101,13 +119,38 @@ export default function Page() {
       let filePreview: string | undefined;
 
       if (isPDF(file)) {
-        // Convert PDF to images and process each page
-        toast.info("Converting PDF to images...");
+        // Update state for PDF conversion
+        setProcessingState((prev) => ({
+          ...prev!,
+          currentStep: "Converting PDF to images...",
+        }));
+
         const pages = await pdfToImages(file);
 
+        // Set preview from first page
+        if (pages.length > 0) {
+          filePreview = `data:image/png;base64,${pages[0].imageBase64}`;
+          setProcessingState((prev) => ({
+            ...prev!,
+            filePreview,
+            totalPages: pages.length,
+            currentPage: 0,
+          }));
+        }
+
         for (let i = 0; i < pages.length; i++) {
+          // Check if cancelled
+          if (controller.signal.aborted) {
+            return;
+          }
+
           const page = pages[i];
-          toast.info(`Processing page ${i + 1} of ${pages.length}...`);
+
+          setProcessingState((prev) => ({
+            ...prev!,
+            currentStep: `Extracting text from page ${i + 1}...`,
+            currentPage: i + 1,
+          }));
 
           const { data, error } = await extractText(
             page.imageBase64,
@@ -119,6 +162,7 @@ export default function Page() {
             toast.error(`Error on page ${i + 1}: ${error.message}`);
             if (error.type === "invalid_key") {
               setShowNoKeyDialog(true);
+              handleReset();
               return;
             }
           } else if (data) {
@@ -132,15 +176,31 @@ export default function Page() {
             totalTokens += data.tokensUsed;
           }
         }
-
-        // Use first page as preview
-        if (pages.length > 0) {
-          filePreview = `data:image/png;base64,${pages[0].imageBase64}`;
-        }
       } else {
         // Regular image processing
+        setProcessingState((prev) => ({
+          ...prev!,
+          currentStep: "Reading image...",
+        }));
+
         const base64 = await fileToBase64(file);
         filePreview = `data:${file.type};base64,${base64}`;
+
+        setProcessingState((prev) => ({
+          ...prev!,
+          filePreview,
+          currentStep: "Analyzing document...",
+        }));
+
+        // Check if cancelled
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setProcessingState((prev) => ({
+          ...prev!,
+          currentStep: "Extracting text with AI...",
+        }));
 
         const { data, error } = await extractText(base64, apiKey, file.type);
 
@@ -149,6 +209,7 @@ export default function Page() {
           if (error.type === "invalid_key") {
             setShowNoKeyDialog(true);
           }
+          handleReset();
           return;
         } else if (data) {
           allText = data.text;
@@ -165,24 +226,35 @@ export default function Page() {
         });
         setViewMode("single-preview");
         toast.success("Text extracted successfully!");
+      } else {
+        toast.error("No text could be extracted");
+        handleReset();
       }
     } catch (error) {
-      toast.error("Failed to process file");
-      console.error("Processing error:", error);
+      if ((error as Error).name !== "AbortError") {
+        toast.error("Failed to process file");
+        console.error("Processing error:", error);
+      }
+      handleReset();
     } finally {
-      setIsProcessing(false);
+      setAbortController(null);
+      setProcessingState(null);
     }
+  };
+
+  const handleCancel = () => {
+    if (abortController) {
+      abortController.abort();
+    }
+    toast.info("Processing cancelled");
+    handleReset();
   };
 
   const handleReset = () => {
     setFiles([]);
     setViewMode("upload");
     setSingleResult(null);
-  };
-
-  const handleSignOut = async () => {
-    await signOut();
-    router.push("/auth/signin");
+    setProcessingState(null);
   };
 
   if (isPending || isLoadingKey) {
@@ -196,66 +268,68 @@ export default function Page() {
   if (!session) return null;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="border-b">
+      <header className="border-b shrink-0">
         <div className="container mx-auto flex items-center justify-between p-4">
           <div className="flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-primary" />
             <h1 className="text-2xl font-bold">vOCR</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground hidden sm:inline">
-              {session.user.email}
-            </span>
+          <div className="flex items-center gap-3">
             <Link href="/settings">
-              <Button variant="outline" size="icon">
-                <Settings className="h-4 w-4" />
-              </Button>
+              <UserAvatar
+                name={session.user.name}
+                email={session.user.email}
+                image={session.user.image}
+                size="sm"
+                className="cursor-pointer hover:ring-primary/50 transition-all"
+              />
             </Link>
-            <Button variant="ghost" size="icon" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4" />
-            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="container mx-auto p-4 py-8">
+      {/* Main content - centered vertically on mobile */}
+      <main className="flex-1 flex items-center justify-center p-4">
         {viewMode === "upload" && (
-          <div className="mx-auto max-w-3xl space-y-6">
-            <div className="text-center">
-              <h2 className="text-3xl font-bold">Extract Text from Documents</h2>
-              <p className="mt-2 text-muted-foreground">
-                Upload images or PDFs to extract text using DeepSeek OCR
+          <div className="w-full max-w-2xl space-y-8">
+            {/* Hero text - simple and friendly */}
+            <div className="text-center space-y-2">
+              <h2 className="text-4xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
+                Scan & Extract
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                Drop your documents, get clean text
               </p>
             </div>
 
             <OCRUploader onFilesSelected={handleFilesSelected} />
 
             {files.length > 0 && (
-              <div className="flex justify-center">
+              <div className="flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <Button
                   size="lg"
                   onClick={handleExtractText}
-                  disabled={isProcessing}
-                  className="gap-2"
+                  className="gap-2 text-base px-8 py-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow"
                 >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-5 w-5" />
-                      Extract Text ({files.length})
-                    </>
-                  )}
+                  <Sparkles className="h-5 w-5" />
+                  {files.length === 1 ? "Extract Text" : `Extract from ${files.length} files`}
                 </Button>
               </div>
             )}
           </div>
+        )}
+
+        {viewMode === "processing" && processingState && (
+          <ProcessingOverlay
+            fileName={processingState.fileName}
+            filePreview={processingState.filePreview}
+            currentStep={processingState.currentStep}
+            currentPage={processingState.currentPage}
+            totalPages={processingState.totalPages}
+            onCancel={handleCancel}
+          />
         )}
 
         {viewMode === "single-preview" && singleResult && (
@@ -280,8 +354,6 @@ export default function Page() {
             </div>
           </div>
         )}
-
-
       </main>
 
       {/* No API Key Dialog */}

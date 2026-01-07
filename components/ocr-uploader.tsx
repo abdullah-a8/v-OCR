@@ -112,43 +112,39 @@ export function OCRUploader({ onFilesSelected, maxFiles = 10 }: OCRUploaderProps
 
   return (
     <div className="space-y-4">
-      {/* Upload Zone */}
-      <Card
-        className={`border-2 border-dashed transition-colors ${
-          isDragging
-            ? "border-primary bg-primary/5"
-            : "border-muted-foreground/25 hover:border-muted-foreground/50"
-        }`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="mb-4 rounded-full bg-primary/10 p-4">
-            <Upload className="h-8 w-8 text-primary" />
-          </div>
-          <h3 className="mb-2 text-lg font-semibold">Upload Documents</h3>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Drag and drop files here, or click to browse
-          </p>
-          <p className="mb-4 text-xs text-muted-foreground">
-            Supports JPG, PNG, WebP, and PDF (Max 10MB per file)
-          </p>
-          <input
-            type="file"
-            id="file-upload"
-            className="hidden"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            multiple
-            onChange={handleFileInput}
-          />
-          <label htmlFor="file-upload">
-            <Button type="button" asChild>
-              <span>Browse Files</span>
-            </Button>
-          </label>
-        </CardContent>
-      </Card>
+      {/* Upload Zone - entire area is clickable */}
+      <label htmlFor="file-upload" className="block cursor-pointer">
+        <Card
+          className={`border-2 border-dashed transition-all ${isDragging
+            ? "border-primary bg-primary/5 scale-[1.02]"
+            : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"
+            }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <div className={`mb-4 rounded-full bg-primary/10 p-4 transition-transform ${isDragging ? "scale-110" : ""}`}>
+              <Upload className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold">Upload Documents</h3>
+            <p className="mb-2 text-sm text-muted-foreground">
+              Drag and drop files here, or tap to browse
+            </p>
+            <p className="text-xs text-muted-foreground">
+              JPG, PNG, WebP, PDF • Max 10MB
+            </p>
+            <input
+              type="file"
+              id="file-upload"
+              className="hidden"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              multiple
+              onChange={handleFileInput}
+            />
+          </CardContent>
+        </Card>
+      </label>
 
       {/* File List */}
       {files.length > 0 && (
@@ -170,21 +166,21 @@ export function OCRUploader({ onFilesSelected, maxFiles = 10 }: OCRUploaderProps
                   key={`${file.name}-${index}`}
                   className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
                 >
-                  <div className="flex-shrink-0">{getFileIcon(file)}</div>
+                  <div className="shrink-0">{getFileIcon(file)}</div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{file.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatFileSize(file.size)}
                     </p>
                   </div>
-                  <Badge variant="secondary" className="flex-shrink-0">
+                  <Badge variant="secondary" className="shrink-0">
                     {file.type.startsWith("image/") ? "Image" : "PDF"}
                   </Badge>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => removeFile(index)}
-                    className="flex-shrink-0"
+                    className="shrink-0"
                   >
                     <X className="h-4 w-4" />
                   </Button>
