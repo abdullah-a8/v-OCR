@@ -43,8 +43,8 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
-        capture="environment"
+        accept="image/*"
+        capture
         onChange={handleFileChange}
         className="hidden"
         aria-hidden="true"
