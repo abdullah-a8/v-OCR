@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
 import { getApiKey } from "@/lib/api-key-service";
-import { extractText, fileToBase64 } from "@/lib/deepseek-client";
+import { extractText, fileToBase64, validateFile } from "@/lib/deepseek-client";
 import { pdfToImages, isPDF } from "@/lib/pdf-utils";
 import { OCRUploader } from "@/components/ocr-uploader";
+import { CapturePreviewModal } from "@/components/capture-preview-modal";
 import { OCRPreview } from "@/components/ocr-preview";
 import { ProcessingOverlay } from "@/components/processing-overlay";
 import { BatchProcessor } from "@/components/batch-processor";
@@ -43,6 +44,8 @@ export default function Page() {
   } | null>(null);
   const [showNoKeyDialog, setShowNoKeyDialog] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   // Redirect to signin if not authenticated
   useEffect(() => {
@@ -76,6 +79,40 @@ export default function Page() {
 
   const handleFilesSelected = (selectedFiles: File[]) => {
     setFiles(selectedFiles);
+  };
+
+  const handleCameraCapture = (file: File) => {
+    // Validate file using existing validateFile function
+    const validation = validateFile(file);
+
+    if (!validation.valid) {
+      toast.error(validation.error || "Invalid file");
+      return;
+    }
+
+    // Store temporarily and show preview
+    setCapturedFile(file);
+    setShowPreviewModal(true);
+  };
+
+  const handleConfirmCapture = () => {
+    if (capturedFile) {
+      setFiles((prev) => [...prev, capturedFile]);
+      toast.success("Photo added!");
+    }
+    setShowPreviewModal(false);
+    setCapturedFile(null);
+  };
+
+  const handleRetakeCapture = () => {
+    setShowPreviewModal(false);
+    setCapturedFile(null);
+    // Camera will re-trigger when user clicks button again
+  };
+
+  const handleClosePreview = () => {
+    setShowPreviewModal(false);
+    setCapturedFile(null);
   };
 
   const handleExtractText = async () => {
@@ -304,7 +341,10 @@ export default function Page() {
               </p>
             </div>
 
-            <OCRUploader onFilesSelected={handleFilesSelected} />
+            <OCRUploader
+              onFilesSelected={handleFilesSelected}
+              onCameraCapture={handleCameraCapture}
+            />
 
             {files.length > 0 && (
               <div className="flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -373,6 +413,14 @@ export default function Page() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CapturePreviewModal
+        file={capturedFile}
+        isOpen={showPreviewModal}
+        onRetake={handleRetakeCapture}
+        onConfirm={handleConfirmCapture}
+        onClose={handleClosePreview}
+      />
     </div>
   );
 }
