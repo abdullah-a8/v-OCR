@@ -21,10 +21,16 @@ export default function SignInPage() {
     setIsLoading(true);
 
     try {
-      await signIn.email({
+      const result = await signIn.email({
         email,
         password,
       });
+
+      if (result.error) {
+        toast.error(result.error.message || "Failed to sign in. Please check your credentials.");
+        console.error("Sign in error:", result.error);
+        return;
+      }
 
       toast.success("Signed in successfully!");
       router.push("/");

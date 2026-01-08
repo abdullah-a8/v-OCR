@@ -34,11 +34,17 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     try {
-      await signUp.email({
+      const result = await signUp.email({
         email,
         password,
         name,
       });
+
+      if (result.error) {
+        toast.error(result.error.message || "Failed to create account. Email may already be in use.");
+        console.error("Sign up error:", result.error);
+        return;
+      }
 
       toast.success("Account created successfully!");
       router.push("/");
