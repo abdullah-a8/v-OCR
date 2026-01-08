@@ -7,13 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { validateFile } from "@/lib/deepseek-client";
 import { Upload, X, FileText, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import { CameraCapture } from '@/components/camera-capture';
 
 interface OCRUploaderProps {
   onFilesSelected: (files: File[]) => void;
+  onCameraCapture: (file: File) => void;
   maxFiles?: number;
 }
 
-export function OCRUploader({ onFilesSelected, maxFiles = 10 }: OCRUploaderProps) {
+export function OCRUploader({ onFilesSelected, onCameraCapture, maxFiles = 10 }: OCRUploaderProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -134,6 +136,13 @@ export function OCRUploader({ onFilesSelected, maxFiles = 10 }: OCRUploaderProps
             <p className="text-xs text-muted-foreground">
               JPG, PNG, WebP, PDF • Max 10MB
             </p>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">or</span>
+              <CameraCapture
+                onCapture={onCameraCapture}
+                disabled={files.length >= maxFiles}
+              />
+            </div>
             <input
               type="file"
               id="file-upload"
