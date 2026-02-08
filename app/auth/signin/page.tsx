@@ -45,14 +45,14 @@ export default function SignInPage() {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Sign In</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl font-semibold">Sign In</CardTitle>
           <CardDescription>
             Enter your credentials to access your account
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSignIn}>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -78,7 +78,7 @@ export default function SignInPage() {
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
+          <CardFooter className="flex flex-col gap-5 pt-2">
             <Button
               type="submit"
               className="w-full"

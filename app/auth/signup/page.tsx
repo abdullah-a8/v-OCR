@@ -59,14 +59,14 @@ export default function SignUpPage() {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Create Account</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl font-semibold">Create Account</CardTitle>
           <CardDescription>
             Sign up to start extracting text from your documents
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSignUp}>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -118,7 +118,7 @@ export default function SignUpPage() {
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
+          <CardFooter className="flex flex-col gap-5 pt-2">
             <Button
               type="submit"
               className="w-full"
