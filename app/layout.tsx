@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
 import { Toaster } from "sonner";
+import { ConvexClientProvider } from "@/components/providers/ConvexProvider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
@@ -36,7 +37,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >
-        {children}
+        <ConvexClientProvider>
+          {children}
+        </ConvexClientProvider>
         <Toaster position="bottom-right" richColors />
       </body>
     </html>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
-import { getApiKey } from "@/lib/api-key-service";
+import { useGetApiKey, getApiKeyDecrypted } from "@/lib/api-key-service";
 import { extractText, fileToBase64, validateFile } from "@/lib/deepseek-client";
 import { pdfToImages, isPDF } from "@/lib/pdf-utils";
 import { OCRUploader } from "@/components/ocr-uploader";
@@ -47,6 +47,9 @@ export default function Page() {
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
+  // Get encrypted API key from Convex
+  const encryptedKeyResult = useGetApiKey(session?.user?.id);
+
   // Redirect to signin if not authenticated
   useEffect(() => {
     if (!isPending && !session) {
@@ -54,28 +57,42 @@ export default function Page() {
     }
   }, [session, isPending, router]);
 
-  // Load API key
+  // Decrypt API key when encrypted key is loaded
   useEffect(() => {
-    if (session?.user?.id) {
-      loadApiKey();
+    async function decryptKey() {
+      if (!session?.user?.id) return;
+
+      // Still loading from Convex
+      if (encryptedKeyResult === undefined) {
+        setIsLoadingKey(true);
+        return;
+      }
+
+      setIsLoadingKey(true);
+
+      if (!encryptedKeyResult?.encryptedApiKey) {
+        setShowNoKeyDialog(true);
+        setIsLoadingKey(false);
+        return;
+      }
+
+      const { apiKey: key, error } = await getApiKeyDecrypted(
+        session.user.id,
+        encryptedKeyResult.encryptedApiKey
+      );
+
+      if (error) {
+        toast.error("Failed to load API key");
+      } else if (!key) {
+        setShowNoKeyDialog(true);
+      } else {
+        setApiKey(key);
+      }
+      setIsLoadingKey(false);
     }
-  }, [session?.user?.id]);
 
-  const loadApiKey = async () => {
-    if (!session?.user?.id) return;
-
-    setIsLoadingKey(true);
-    const { apiKey: key, error } = await getApiKey(session.user.id);
-
-    if (error) {
-      toast.error("Failed to load API key");
-    } else if (!key) {
-      setShowNoKeyDialog(true);
-    } else {
-      setApiKey(key);
-    }
-    setIsLoadingKey(false);
-  };
+    decryptKey();
+  }, [session?.user?.id, encryptedKeyResult]);
 
   const handleFilesSelected = (selectedFiles: File[]) => {
     setFiles(selectedFiles);

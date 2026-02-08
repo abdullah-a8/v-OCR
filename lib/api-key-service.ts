@@ -1,6 +1,7 @@
 "use client";
 
-import { supabase } from "./supabase";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { encryptApiKey, decryptApiKey } from "./encryption";
 
 export interface UserApiKey {
@@ -12,42 +13,55 @@ export interface UserApiKey {
 }
 
 /**
- * Save or update a user's encrypted API key in Supabase
+ * Hook to get the save API key mutation
+ */
+export function useSaveApiKeyMutation() {
+  return useMutation(api.apiKeys.saveApiKey);
+}
+
+/**
+ * Hook to get the delete API key mutation
+ */
+export function useDeleteApiKeyMutation() {
+  return useMutation(api.apiKeys.deleteApiKey);
+}
+
+/**
+ * Hook to check if user has an API key
+ */
+export function useHasApiKey(userId: string | undefined) {
+  return useQuery(
+    api.apiKeys.hasApiKey,
+    userId ? { userId } : "skip"
+  );
+}
+
+/**
+ * Hook to get encrypted API key
+ */
+export function useGetApiKey(userId: string | undefined) {
+  return useQuery(
+    api.apiKeys.getApiKey,
+    userId ? { userId } : "skip"
+  );
+}
+
+/**
+ * Save or update a user's encrypted API key
  */
 export async function saveApiKey(
   userId: string,
-  apiKey: string
+  apiKey: string,
+  saveMutation: ReturnType<typeof useSaveApiKeyMutation>
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Encrypt the API key before storing
     const encryptedKey = await encryptApiKey(apiKey, userId);
 
-    // Check if user already has an API key
-    const { data: existing } = await supabase
-      .from("user_api_keys")
-      .select("id")
-      .eq("user_id", userId)
-      .single();
-
-    if (existing) {
-      // Update existing key
-      const { error } = await supabase
-        .from("user_api_keys")
-        .update({ encrypted_api_key: encryptedKey })
-        .eq("user_id", userId);
-
-      if (error) throw error;
-    } else {
-      // Insert new key
-      const { error } = await supabase
-        .from("user_api_keys")
-        .insert({
-          user_id: userId,
-          encrypted_api_key: encryptedKey,
-        });
-
-      if (error) throw error;
-    }
+    await saveMutation({
+      userId,
+      encryptedApiKey: encryptedKey,
+    });
 
     return { success: true };
   } catch (error) {
@@ -60,36 +74,23 @@ export async function saveApiKey(
 }
 
 /**
- * Retrieve and decrypt a user's API key from Supabase
+ * Retrieve and decrypt a user's API key
  */
-export async function getApiKey(
-  userId: string
+export async function getApiKeyDecrypted(
+  userId: string,
+  encryptedApiKey: string | null | undefined
 ): Promise<{ apiKey: string | null; error?: string }> {
   try {
-    const { data, error } = await supabase
-      .from("user_api_keys")
-      .select("encrypted_api_key")
-      .eq("user_id", userId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") {
-        // No API key found
-        return { apiKey: null };
-      }
-      throw error;
-    }
-
-    if (!data?.encrypted_api_key) {
+    if (!encryptedApiKey) {
       return { apiKey: null };
     }
 
     // Decrypt the API key
-    const apiKey = await decryptApiKey(data.encrypted_api_key, userId);
+    const apiKey = await decryptApiKey(encryptedApiKey, userId);
 
     return { apiKey };
   } catch (error) {
-    console.error("Error retrieving API key:", error);
+    console.error("Error decrypting API key:", error);
     return {
       apiKey: null,
       error:
@@ -99,18 +100,14 @@ export async function getApiKey(
 }
 
 /**
- * Delete a user's API key from Supabase
+ * Delete a user's API key
  */
 export async function deleteApiKey(
-  userId: string
+  userId: string,
+  deleteMutation: ReturnType<typeof useDeleteApiKeyMutation>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
-      .from("user_api_keys")
-      .delete()
-      .eq("user_id", userId);
-
-    if (error) throw error;
+    await deleteMutation({ userId });
 
     return { success: true };
   } catch (error) {
@@ -120,22 +117,5 @@ export async function deleteApiKey(
       error:
         error instanceof Error ? error.message : "Failed to delete API key",
     };
-  }
-}
-
-/**
- * Check if a user has an API key stored
- */
-export async function hasApiKey(userId: string): Promise<boolean> {
-  try {
-    const { data } = await supabase
-      .from("user_api_keys")
-      .select("id")
-      .eq("user_id", userId)
-      .single();
-
-    return !!data;
-  } catch {
-    return false;
   }
 }

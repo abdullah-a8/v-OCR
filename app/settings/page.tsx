@@ -24,9 +24,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { saveApiKey, getApiKey, deleteApiKey } from "@/lib/api-key-service";
+import {
+  useGetApiKey,
+  useSaveApiKeyMutation,
+  useDeleteApiKeyMutation,
+  saveApiKey,
+  deleteApiKey,
+  getApiKeyDecrypted
+} from "@/lib/api-key-service";
 import { maskApiKey, validateApiKeyFormat } from "@/lib/encryption";
 import { Loader2, Eye, EyeOff, Trash2, Pencil, X, ArrowLeft, LogOut } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
@@ -45,33 +51,52 @@ export default function SettingsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [hasExistingKey, setHasExistingKey] = useState(false);
 
+  // Convex hooks
+  const encryptedKeyResult = useGetApiKey(session?.user?.id);
+  const saveApiKeyMutation = useSaveApiKeyMutation();
+  const deleteApiKeyMutation = useDeleteApiKeyMutation();
+
   useEffect(() => {
     if (!isPending && !session) {
       router.push("/auth/signin");
     }
   }, [session, isPending, router]);
 
+  // Load and decrypt API key when encrypted key is loaded
   useEffect(() => {
-    if (session?.user?.id) {
-      loadApiKey();
+    async function loadKey() {
+      if (!session?.user?.id) return;
+
+      // Still loading from Convex
+      if (encryptedKeyResult === undefined) {
+        setIsPageLoading(true);
+        return;
+      }
+
+      setIsPageLoading(true);
+
+      if (!encryptedKeyResult?.encryptedApiKey) {
+        setIsPageLoading(false);
+        return;
+      }
+
+      const { apiKey: existingKey, error } = await getApiKeyDecrypted(
+        session.user.id,
+        encryptedKeyResult.encryptedApiKey
+      );
+
+      if (error) {
+        toast.error("Failed to load API key");
+      } else if (existingKey) {
+        setApiKey(existingKey);
+        setMaskedKey(maskApiKey(existingKey));
+        setHasExistingKey(true);
+      }
+      setIsPageLoading(false);
     }
-  }, [session?.user?.id]);
 
-  const loadApiKey = async () => {
-    if (!session?.user?.id) return;
-
-    setIsPageLoading(true);
-    const { apiKey: existingKey, error } = await getApiKey(session.user.id);
-
-    if (error) {
-      toast.error("Failed to load API key");
-    } else if (existingKey) {
-      setApiKey(existingKey);
-      setMaskedKey(maskApiKey(existingKey));
-      setHasExistingKey(true);
-    }
-    setIsPageLoading(false);
-  };
+    loadKey();
+  }, [session?.user?.id, encryptedKeyResult]);
 
   const handleStartEdit = () => {
     setEditValue(apiKey);
@@ -101,7 +126,11 @@ export default function SettingsPage() {
     }
 
     setIsLoading(true);
-    const { success, error } = await saveApiKey(session.user.id, keyToSave);
+    const { success, error } = await saveApiKey(
+      session.user.id,
+      keyToSave,
+      saveApiKeyMutation
+    );
 
     if (success) {
       toast.success("API key saved!");
@@ -167,7 +196,10 @@ export default function SettingsPage() {
     if (!session?.user?.id) return;
 
     setIsLoading(true);
-    const { success, error } = await deleteApiKey(session.user.id);
+    const { success, error } = await deleteApiKey(
+      session.user.id,
+      deleteApiKeyMutation
+    );
 
     if (success) {
       toast.success("API key deleted");
